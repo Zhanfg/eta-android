@@ -67,6 +67,18 @@ object NotificationBridge {
     const val ACTION_CHANNEL = "goal_action"
     private const val GOAL_ID = 27001
 
+    private fun requestPromotedOngoingCompat(builder: Notification.Builder) {
+        // Android 16 API 36.1 added setRequestPromotedOngoing(). Compile against API 36 so the
+        // APK remains buildable on the base Android 16 SDK, then use the method when the device
+        // framework actually exposes it. Missing 36.1 API safely falls back to a normal ongoing
+        // progress notification.
+        runCatching {
+            Notification.Builder::class.java
+                .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType!!)
+                .invoke(builder, true)
+        }
+    }
+
     fun refresh(context: Context) {
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val snapshot = runCatching { OcdClient(context).call("notification.snapshot") }.getOrNull() ?: return
@@ -85,7 +97,7 @@ object NotificationBridge {
             .setOngoing(state !in setOf("completed", "failed", "cancelled"))
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setProgress(100, progress, false)
-        if (Build.VERSION.SDK_INT >= 36) builder.setRequestPromotedOngoing(true)
+        requestPromotedOngoingCompat(builder)
         if (state == "completed") builder.setTimeoutAfter(60_000)
         if (state == "failed") builder.setTimeoutAfter(5 * 60_000)
         nm.notify(GOAL_ID, builder.build())
