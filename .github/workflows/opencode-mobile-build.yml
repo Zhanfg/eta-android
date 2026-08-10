@@ -4,7 +4,7 @@ on:
   push:
     branches: [opencode-mobile-build]
     paths:
-      - "ci/**"
+      - "ci/chunks/**"
       - ".github/workflows/opencode-mobile-build.yml"
   workflow_dispatch:
 
@@ -14,17 +14,23 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Expand assembly source
+      - name: Restore and verify source archive
+        shell: bash
         run: |
-          rm -rf src
-          mkdir src
-          unzip -q ci/OpenCode-Mobile-Assembly-Source-v0.1.zip -d src
-          find src -maxdepth 3 -type f | sort | head -80
+          set -euo pipefail
+          cat ci/chunks/{0,1,2,3,4,5,6,7} | tr -d '\r\n ' | base64 -d > /tmp/ocm.zip
+          echo "7ecb7d7ed2c5828fc0f93430cda5d676ec8fc595d9d0bc1f9946abdd70aa622e  /tmp/ocm.zip" | sha256sum -c -
+          unzip -t /tmp/ocm.zip
+          rm -rf src && mkdir src
+          unzip -q /tmp/ocm.zip -d src
+          test -f src/android/app/build.gradle.kts
+          test -f src/backend/ocd/Cargo.toml
+          test -x src/scripts/package.sh || chmod +x src/scripts/package.sh
 
       - name: Java 21
         uses: actions/setup-java@v4
@@ -32,26 +38,31 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Gradle
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
 
-      - name: Build signed debug APK
+      - name: Build installable Kotlin debug APK
         working-directory: src/android
+        shell: bash
         run: |
-          gradle --version
+          set -euo pipefail
           gradle :app:assembleDebug --stacktrace --no-daemon
           test -s app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Android SDK/NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install pinned NDK
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "ndk;27.2.12479018"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
 
       - name: Rust ARM64 Android toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -61,15 +72,20 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      - name: Build Rust ocd
+      - name: Build Rust ocd for arm64-v8a
         working-directory: src/backend/ocd
+        shell: bash
         run: |
+          set -euo pipefail
           cargo ndk -t arm64-v8a -p 31 build --release
           test -x target/aarch64-linux-android/release/ocd
           file target/aarch64-linux-android/release/ocd
+          sha256sum target/aarch64-linux-android/release/ocd
 
-      - name: Assemble KernelSU ZIP
+      - name: Assemble KernelSU flash ZIP
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p src/out src/dist
           cp src/android/app/build/outputs/apk/debug/app-debug.apk src/out/OpenCodeMobile.apk
           cp src/backend/ocd/target/aarch64-linux-android/release/ocd src/out/ocd
@@ -77,11 +93,11 @@ jobs:
           src/scripts/package.sh
           cp src/out/OpenCodeMobile.apk src/dist/OpenCodeMobile.apk
           cp src/out/ocd src/dist/ocd-arm64
-          (
-            cd src/dist
-            sha256sum OpenCode-Mobile-KSU.zip OpenCodeMobile.apk ocd-arm64 > SHA256SUMS
-            cat SHA256SUMS
-          )
+          unzip -t src/dist/OpenCode-Mobile-KSU.zip
+          unzip -l src/dist/OpenCode-Mobile-KSU.zip | grep -E 'bin/ocd|apk/OpenCodeMobile.apk|module.prop|customize.sh'
+          cd src/dist
+          sha256sum OpenCode-Mobile-KSU.zip OpenCodeMobile.apk ocd-arm64 > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Upload final package
         uses: actions/upload-artifact@v4
