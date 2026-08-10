@@ -1,0 +1,96 @@
+name: OpenCode Mobile public build
+
+on:
+  push:
+    branches: [opencode-mobile-build]
+    paths:
+      - "ci/**"
+      - ".github/workflows/opencode-mobile-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Expand assembly source
+        run: |
+          rm -rf src
+          mkdir src
+          unzip -q ci/OpenCode-Mobile-Assembly-Source-v0.1.zip -d src
+          find src -maxdepth 3 -type f | sort | head -80
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Build signed debug APK
+        working-directory: src/android
+        run: |
+          gradle --version
+          gradle :app:assembleDebug --stacktrace --no-daemon
+          test -s app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Android SDK/NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Rust ARM64 Android toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build Rust ocd
+        working-directory: src/backend/ocd
+        run: |
+          cargo ndk -t arm64-v8a -p 31 build --release
+          test -x target/aarch64-linux-android/release/ocd
+          file target/aarch64-linux-android/release/ocd
+
+      - name: Assemble KernelSU ZIP
+        run: |
+          mkdir -p src/out src/dist
+          cp src/android/app/build/outputs/apk/debug/app-debug.apk src/out/OpenCodeMobile.apk
+          cp src/backend/ocd/target/aarch64-linux-android/release/ocd src/out/ocd
+          chmod 0755 src/out/ocd src/scripts/package.sh
+          src/scripts/package.sh
+          cp src/out/OpenCodeMobile.apk src/dist/OpenCodeMobile.apk
+          cp src/out/ocd src/dist/ocd-arm64
+          (
+            cd src/dist
+            sha256sum OpenCode-Mobile-KSU.zip OpenCodeMobile.apk ocd-arm64 > SHA256SUMS
+            cat SHA256SUMS
+          )
+
+      - name: Upload final package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenCode-Mobile-KSU
+          path: |
+            src/dist/OpenCode-Mobile-KSU.zip
+            src/dist/OpenCodeMobile.apk
+            src/dist/ocd-arm64
+            src/dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
