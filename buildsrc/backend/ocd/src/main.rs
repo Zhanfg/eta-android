@@ -1,3 +1,7 @@
+use nix::{
+    mount::{mount, MsFlags},
+    sched::{unshare, CloneFlags},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -6,6 +10,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
+    process::Command,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -67,8 +72,9 @@ fn log(paths: &Paths, level: Level, component: &str, event: &str, message: &str,
 }
 
 fn log_gc(paths: &Paths) {
-    let now = SystemTime::now();
-    let cutoff = now.checked_sub(Duration::from_secs(LOG_RETENTION_SECS)).unwrap_or(UNIX_EPOCH);
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(LOG_RETENTION_SECS))
+        .unwrap_or(UNIX_EPOCH);
     let mut files = Vec::new();
     let mut total = 0u64;
     if let Ok(entries) = fs::read_dir(&paths.logs) {
@@ -116,7 +122,7 @@ fn make_id(prefix: &str) -> String {
 fn atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     let mut file = File::create(&tmp)?;
-    serde_json::to_writer_pretty(&mut file, value)?;
+    serde_json::to_writer_pretty(&mut file, value).map_err(std::io::Error::other)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
     fs::rename(tmp, path)
@@ -133,6 +139,33 @@ fn load_dir<T: for<'de> Deserialize<'de>>(dir: &Path) -> Vec<T> {
         }
     }
     out
+}
+
+fn run_bootstrap(paths: &Paths) -> Result<(), Box<dyn std::error::Error>> {
+    paths.ensure()?;
+    unshare(CloneFlags::CLONE_NEWNS)?;
+    mount::<str, str, str, str>(
+        None,
+        "/",
+        None,
+        MsFlags::MS_REC | MsFlags::MS_PRIVATE,
+        None,
+    )?;
+
+    let script = paths.base.join("bootstrap/bootstrap-runtime.sh");
+    if !script.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("bootstrap runtime script missing: {}", script.display()),
+        ).into());
+    }
+
+    log(paths, Level::Info, "bootstrap", "namespace_ready", "Private mount namespace created", json!({"script": script}));
+    let status = Command::new("/system/bin/sh").arg(&script).status()?;
+    if !status.success() {
+        return Err(std::io::Error::other(format!("bootstrap runtime exited with {status}")).into());
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -263,9 +296,7 @@ fn serve_client(mut stream: TcpStream, token: String, paths: Paths) {
     let _ = writeln!(stream, "{response}");
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let paths = Paths::new(PathBuf::from(env::var("OCM_BASE").unwrap_or_else(|_| DEFAULT_BASE.into())));
-    paths.ensure()?;
+fn run_daemon(paths: Paths) -> Result<(), Box<dyn std::error::Error>> {
     let token = ensure_token(&paths)?;
     log_gc(&paths);
     let gc_paths = paths.clone();
@@ -279,6 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log(&paths, Level::Info, "ocd", "started", "Rust backend started", json!({"addr": addr}));
     log(&paths, Level::Debug, "ocd", "policy", "Five-level logging active", json!({}));
     log(&paths, Level::Trace, "ocd", "trace_ready", "Trace level available", json!({}));
+
     for incoming in listener.incoming() {
         match incoming {
             Ok(stream) => {
@@ -290,4 +322,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let paths = Paths::new(PathBuf::from(env::var("OCM_BASE").unwrap_or_else(|_| DEFAULT_BASE.into())));
+    paths.ensure()?;
+
+    match env::args().nth(1).as_deref() {
+        Some("bootstrap") => run_bootstrap(&paths),
+        Some("daemon") | None => run_daemon(paths),
+        Some(other) => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("unknown subcommand: {other}")).into()),
+    }
 }
