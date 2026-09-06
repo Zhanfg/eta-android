@@ -21,19 +21,18 @@ jobs:
       - name: Checkout build branch
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
       - name: Checkout ColorOS Provider 4.1 source
         run: |
           git clone --filter=blob:none https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers.git upstream
           cd upstream
           git checkout 747a9a0c3ebf3ca33c33d4d38b0243b78263f2d1
           test "$(git rev-parse HEAD)" = "747a9a0c3ebf3ca33c33d4d38b0243b78263f2d1"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Apply unified Lyricon output patch
         run: python3 unified-apple-provider/patch.py upstream
