@@ -37,6 +37,11 @@ jobs:
       - name: Apply unified Lyricon output patch
         run: python3 unified-apple-provider/patch.py upstream
 
+      - name: Prepare stable public test signing key
+        run: |
+          base64 -d unified-apple-provider/unified-test.jks.b64 > upstream/player-apple/unified-test.jks
+          keytool -list -keystore upstream/player-apple/unified-test.jks -storepass android -alias unified >/dev/null
+
       - name: Show patch diff
         working-directory: upstream
         run: git diff --check && git diff --stat && git diff -- player-apple gradle/libs.versions.toml
@@ -45,7 +50,12 @@ jobs:
         working-directory: upstream
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :player-apple:assembleDebug
+          KEYSTORE="$PWD/player-apple/unified-test.jks"
+          ./gradlew --no-daemon --stacktrace :player-apple:assembleDebug \
+            -Pandroid.injected.signing.store.file="$KEYSTORE" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=unified \
+            -Pandroid.injected.signing.key.password=android
 
       - name: Prepare artifact
         run: |
