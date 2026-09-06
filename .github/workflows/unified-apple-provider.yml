@@ -52,14 +52,14 @@ jobs:
           mkdir -p output
           APK="$(find upstream/player-apple/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          cp "$APK" output/Apple-Lyrics-Provider-1.1.0-unified1-debug.apk
+          cp "$APK" output/Apple-Lyrics-Provider-1.1.0-unified2-debug.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
           ls -lh output
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Apple-Lyrics-Provider-1.1.0-unified1-debug
+          name: Apple-Lyrics-Provider-1.1.0-unified2-debug
           path: output/
           if-no-files-found: error
           retention-days: 30
