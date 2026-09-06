@@ -44,7 +44,52 @@ def main() -> None:
     replace_once(
         apple_gradle,
         '        versionCode = 2\n        versionName = "1.1.0"\n',
-        '        versionCode = 3\n        versionName = "1.1.0-unified1"\n',
+        '        versionCode = 4\n        versionName = "1.1.0-unified2"\n',
+    )
+
+    # Lyricon's provider-management page is a package scan, not a live Binder view.
+    # These manifest fields are therefore mandatory for the module to appear there.
+    manifest = root / "player-apple/src/main/AndroidManifest.xml"
+    replace_once(
+        manifest,
+        '        android:theme="@style/Theme.AppleProvider">\n\n        <activity\n',
+        '        android:theme="@style/Theme.AppleProvider">\n\n'
+        '        <meta-data\n'
+        '            android:name="lyricon_module"\n'
+        '            android:value="true" />\n\n'
+        '        <meta-data\n'
+        '            android:name="lyricon_module_author"\n'
+        '            android:value="Andrea-TB, Tomakino" />\n\n'
+        '        <meta-data\n'
+        '            android:name="lyricon_module_description"\n'
+        '            android:value="@string/lyricon_module_description" />\n\n'
+        '        <meta-data\n'
+        '            android:name="lyricon_module_tags"\n'
+        '            android:resource="@array/lyricon_module_tags" />\n\n'
+        '        <activity\n',
+    )
+
+    arrays = root / "player-apple/src/main/res/values/arrays.xml"
+    replace_once(
+        arrays,
+        '    <string-array name="xposed_scope">\n'
+        '        <item>com.apple.android.music</item>\n'
+        '    </string-array>\n',
+        '    <string-array name="xposed_scope">\n'
+        '        <item>com.apple.android.music</item>\n'
+        '    </string-array>\n\n'
+        '    <string-array name="lyricon_module_tags">\n'
+        '        <item>$syllable</item>\n'
+        '        <item>$translation</item>\n'
+        '    </string-array>\n',
+    )
+
+    strings = root / "player-apple/src/main/res/values/strings.xml"
+    replace_once(
+        strings,
+        '    <string name="xposed_description">ColorOS lockscreen lyrics for Apple Music</string>\n',
+        '    <string name="xposed_description">ColorOS lockscreen lyrics for Apple Music</string>\n'
+        '    <string name="lyricon_module_description">Provides Apple Music lyrics to both ColorOS Live Lyrics Bridge and Lyricon.</string>\n',
     )
 
     bridge = root / "player-apple/src/main/kotlin/io/github/andrealtb/coloroslyrics/provider/apple/AppleLyriconPublisher.kt"
@@ -90,11 +135,13 @@ object AppleLyriconPublisher {
                 ).also { created ->
                     created.autoSync = true
                     created.player.setDisplayTranslation(true)
-                    created.register()
+                    val registrationStarted = created.register()
                     provider = created
+                    log(
+                        "LYRICON_PROVIDER_READY",
+                        "player=$playerPackageName registrationStarted=$registrationStarted"
+                    )
                 }
-            }.onSuccess {
-                log("LYRICON_PROVIDER_READY", playerPackageName)
             }.onFailure { throwable ->
                 log("LYRICON_PROVIDER_INIT_FAILED", throwable.javaClass.simpleName)
             }
@@ -280,7 +327,7 @@ object AppleLyriconPublisher {
         '        when (decision) {\n',
     )
 
-    print("Unified Apple provider patch applied successfully")
+    print("Unified Apple provider v2 patch applied successfully")
 
 
 if __name__ == "__main__":
