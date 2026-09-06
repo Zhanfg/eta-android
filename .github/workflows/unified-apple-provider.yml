@@ -43,7 +43,9 @@ jobs:
 
       - name: Build debug APK
         working-directory: upstream
-        run: ./gradlew --no-daemon --stacktrace :player-apple:assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :player-apple:assembleDebug
 
       - name: Prepare artifact
         run: |
