@@ -34,8 +34,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Apply unified Lyricon output patch
-        run: python3 unified-apple-provider/patch.py upstream
+      - name: Apply unified Lyricon output patches
+        run: |
+          python3 unified-apple-provider/patch.py upstream
+          python3 unified-apple-provider/fix_v3.py upstream
 
       - name: Prepare stable public test signing key
         run: |
@@ -62,14 +64,14 @@ jobs:
           mkdir -p output
           APK="$(find upstream/player-apple/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          cp "$APK" output/Apple-Lyrics-Provider-1.1.0-unified2-debug.apk
+          cp "$APK" output/Apple-Lyrics-Provider-1.1.0-unified3-debug.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
           ls -lh output
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Apple-Lyrics-Provider-1.1.0-unified2-debug
+          name: Apple-Lyrics-Provider-1.1.0-unified3-debug
           path: output/
           if-no-files-found: error
           retention-days: 30
