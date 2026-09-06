@@ -39,6 +39,7 @@ jobs:
           python3 unified-apple-provider/patch.py upstream
           python3 unified-apple-provider/fix_v3.py upstream
           python3 unified-apple-provider/fix_v4.py upstream
+          python3 unified-apple-provider/fix_v4_probe.py upstream
 
       - name: Prepare stable public test signing key
         run: |
