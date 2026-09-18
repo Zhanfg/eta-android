@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="com.google.android.as.oss">
+        <permission name="android.permission.MANAGE_VIRTUAL_MACHINE" />
+        <permission name="android.permission.PERSONAL_CONTEXT_RECEIVE_INSIGHTS" />
+        <permission name="android.permission.PROVIDE_PRIVATE_COMPUTE_SERVICES" />
+        <permission name="android.permission.READ_DEVICE_CONFIG" />
+        <permission name="android.permission.READ_RESTRICTED_STATS" />
+        <permission name="android.permission.READ_SYSTEM_GRAMMATICAL_GENDER" />
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+    </privapp-permissions>
+</permissions>
