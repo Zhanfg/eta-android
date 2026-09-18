@@ -20,39 +20,53 @@ jobs:
           bash -n aicore_bridge/customize.sh
           bash -n aicore_bridge/service.sh
           bash -n aicore_bridge/action.sh
+          dash -n aicore_bridge/service.sh
+          dash -n aicore_bridge/action.sh
 
-      - name: Validate module layout
+      - name: Validate 0.2 product layout
         run: |
           test -f aicore_bridge/module.prop
-          test -f aicore_bridge/system/etc/permissions/aicore-bridge-features.xml
-          test -f aicore_bridge/system/etc/permissions/privapp-permissions-com.google.android.aicore.xml
-          test -f aicore_bridge/system/etc/permissions/privapp-permissions-com.google.android.as.oss.xml
-          test -f aicore_bridge/system/etc/sysconfig/aicore-bridge-associations.xml
-          grep -q '^id=aicore_bridge_oneplus13$' aicore_bridge/module.prop
+          grep -q '^version=0.2-dev$' aicore_bridge/module.prop
+          test -f aicore_bridge/system/product/etc/permissions/aicore-bridge-features.xml
+          test -f aicore_bridge/system/product/etc/permissions/privapp-permissions-com.google.android.aicore.xml
+          test -f aicore_bridge/system/product/etc/permissions/privapp-permissions-com.google.android.as.oss.xml
+          test ! -e aicore_bridge/system/etc/sysconfig/aicore-bridge-associations.xml
+          grep -q 'com.google.android.feature.AICORE_QC' aicore_bridge/system/product/etc/permissions/aicore-bridge-features.xml
+          grep -q 'android.hardware.npu' aicore_bridge/system/product/etc/permissions/aicore-bridge-features.xml
 
       - name: Validate XML
         run: |
           python3 - <<'PY'
           import pathlib
           import xml.etree.ElementTree as ET
-          for p in pathlib.Path('aicore_bridge/system/etc').rglob('*.xml'):
+          paths = list(pathlib.Path('aicore_bridge').rglob('*.xml'))
+          assert paths, 'no XML files found'
+          for p in paths:
               ET.parse(p)
               print('OK', p)
           PY
+
+      - name: Verify probe-first safety properties
+        run: |
+          ! grep -R 'allow-association target="com.google.android.as"' aicore_bridge/system || false
+          ! grep -R 'AndroidSystemIntelligence' aicore_bridge/customize.sh | grep -q 'priv-app'
+          grep -q 'preinstall-coloros.txt' aicore_bridge/customize.sh
+          grep -q 'variant_status=' aicore_bridge/action.sh
+          grep -q 'GmsConfig' aicore_bridge/action.sh
 
       - name: Build module ZIP
         run: |
           cd aicore_bridge
           chmod +x customize.sh service.sh action.sh
-          zip -9 -r ../AICoreBridge-OnePlus13-0.1-dev.zip . -x '*.DS_Store' '__MACOSX/*'
+          zip -9 -r ../AICoreBridge-OnePlus13-0.2-dev.zip . -x '*.DS_Store' '__MACOSX/*'
 
       - name: Inspect ZIP
         run: |
-          unzip -t AICoreBridge-OnePlus13-0.1-dev.zip
-          unzip -l AICoreBridge-OnePlus13-0.1-dev.zip
-          sha256sum AICoreBridge-OnePlus13-0.1-dev.zip
+          unzip -t AICoreBridge-OnePlus13-0.2-dev.zip
+          unzip -l AICoreBridge-OnePlus13-0.2-dev.zip
+          sha256sum AICoreBridge-OnePlus13-0.2-dev.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AICoreBridge-OnePlus13-0.1-dev
-          path: AICoreBridge-OnePlus13-0.1-dev.zip
+          name: AICoreBridge-OnePlus13-0.2-dev
+          path: AICoreBridge-OnePlus13-0.2-dev.zip
