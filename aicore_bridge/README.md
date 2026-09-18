@@ -1,77 +1,90 @@
 # AICore Bridge - OnePlus 13 CN
 
-Systemless integration bridge for bringing the official Google Android AICore stack to the China-market OnePlus 13 (PJZ110 / dodge) without replacing ColorOS with OxygenOS.
+Probe-first systemless integration bridge for testing the official Google Android AICore stack on the China-market OnePlus 13 (PJZ110 / ColorOS 16) without replacing ColorOS with OxygenOS.
 
-## Design
+## Evidence status
 
-This module reproduces the missing Google system-integration layer rather than globally spoofing the phone as a Pixel.
+### What is directly supported by evidence
 
-It adds:
+- OnePlus 13 global/OxygenOS builds ship Google AICore/Gemini Nano support.
+- A public ColorOS/OnePlus system-app community distributes an **AICore (OnePlus), Global, extracted from OxygenOS 16 OTA** bundle and explicitly labels that build as **targeted to COS 16**.
+- Google's production Qualcomm AICore package requires `android.hardware.npu` and `com.google.android.feature.AICORE_QC`.
+- Google's current open-source Private Compute Services manifest explicitly allows both `com.google.android.aicore` and `com.google.android.inputmethod.latin` (Gboard) to access PCS.
+- Public OnePlus 13 / SM8750 vendor lists contain QNN/HTP/aiboost inference libraries, so the hardware/vendor inference backend exists on this device family.
 
-- `com.google.android.feature.AICORE_QC`
-- `android.hardware.npu`
-- privileged-permission allowlists for `com.google.android.aicore`
-- privileged-permission allowlists for `com.google.android.as.oss` (Private Compute Services)
-- the verified Android System Intelligence <-> Private Compute Services association
-- package-adoption helpers that preserve Google's original APK signatures
-- boot diagnostics and an Action-generated report
+### What is NOT yet proven
 
-## Important limitations
+There is not yet a public, reproducible report that closes the entire loop **PJZ110 ColorOS 16 -> side-loaded OOS AICore -> Gemini Nano model downloaded -> Gboard AICore Writing Tools successfully return suggestions**. This module is designed to produce the missing evidence rather than assume success.
 
-- The module does NOT bundle, modify, re-sign, or redistribute Google's proprietary AICore binaries.
-- It does NOT globally spoof the device fingerprint/model as a Pixel.
-- It does NOT modify bootloader state, vendor firmware, NPU firmware, QNN libraries, or Play Integrity.
-- Google currently documents ML Kit GenAI APIs as unsupported on devices with an unlocked bootloader. A healthy local AICore service therefore does not guarantee Google will provision Gemini Nano features on an unlocked/rooted device.
-- Server-side feature provisioning can still reject a device even when the package and Binder service are healthy.
+## 0.2 design changes
 
-## Package roles
+- Uses the `/product` privileged-app/config layer instead of generic `/system/priv-app`.
+- Saves a pre-reboot ColorOS baseline during installation.
+- Reuses an existing system Private Compute Services package, including OEM locations such as OPlus Google partitions, instead of shadowing it.
+- Reuses an existing system AICore package if present.
+- Does **not** auto-install Android System Intelligence; Gboard has a direct PCS/AICore access path.
+- Removes the incomplete ASI association allowlist from 0.1. Android allow-association targets are restrictive and a partial list can break unrelated ASI bindings.
+- Performs no Pixel fingerprint spoofing, Play Integrity spoofing, or bootloader-state bypass.
 
-- `com.google.android.aicore` - Android AICore system service / Gemini Nano runtime.
-- `com.google.android.as.oss` - Private Compute Services; network/privacy gateway used for protected model delivery.
-- `com.google.android.as` - Android System Intelligence; optional but recommended when reproducing the global Google system-intelligence stack.
+## Package / variant selection
 
-## Install modes
+For PJZ110 / OnePlus 13 / SM8750:
 
-### One-reboot import
+1. **Best evidence match:** production Qualcomm AICore extracted from a OnePlus OxygenOS 16 OTA. The community example is `0.release.qc.prod_aicore_20260430.00_RC04.915164305`.
+2. **Hardware-family candidate:** a Google production `qc8750` AICore build.
+3. Avoid Samsung SLSI, `qc8650`, `qc8635`, Pixel-only, and third-party-experimental variants for the first controlled test.
 
-Before flashing the module, place official Google-signed bundles in:
+The Google production signing certificate SHA-256 for the community-matched QC build is:
 
-- `/sdcard/AICoreBridge/aicore.apkm`
+`b7971ccc10a03932e14a3557a1b4c2a84be0ecb506777f0c72dd46cf5d7093c6`
+
+## Install flow
+
+### Preferred controlled test
+
+1. Make sure ReSukiSU/KernelSU has a system-mount metamodule such as `meta-overlayfs`.
+2. Place the official Google-signed OnePlus/OOS Qualcomm AICore bundle at either:
+   - `/sdcard/AICoreBridge/aicore.apks`
+   - `/sdcard/AICoreBridge/aicore.apkm`
+3. Do **not** provide PCS unless ColorOS really lacks `com.google.android.as.oss`; 0.2 first reuses any existing system PCS package.
+4. Flash AICore Bridge 0.2.
+5. The installer saves the untouched ColorOS package/feature/overlay state before the module is mounted.
+6. Reboot.
+7. Run the module **Action**.
+8. Send `AICoreBridge/report-*.txt` for comparison.
+9. Only after AICore is healthy should Gboard Enhancer be switched to the `AICore` backend.
+
+### If AICore was already installed as a normal user package
+
+Flash the module and run its Action. The Action can copy the existing Google-signed split APKs into the module's `/product/priv-app/AICore` overlay. Reboot once more after adoption.
+
+### PCS fallback
+
+If `com.google.android.as.oss` is absent, place an Android-16 arm64 PCS bundle as:
+
+- `/sdcard/AICoreBridge/pcs.apks`, or
 - `/sdcard/AICoreBridge/pcs.apkm`
-- optional: `/sdcard/AICoreBridge/asi.apkm`
 
-The installer extracts only the APK splits into the systemless `system/priv-app` layer. It does not alter the APK bytes.
+0.2 will only stage it when no system PCS package is detected.
 
-### Bootstrap / adopt
+## Diagnostic report
 
-1. Flash AICore Bridge.
-2. Reboot.
-3. Install Google's **production Qualcomm** AICore variant (`com.google.android.aicore`, feature `com.google.android.feature.AICORE_QC`) plus an Android-16 arm64 Private Compute Services bundle. Do not use Samsung SLSI or Pixel-only AICore variants.
-4. Open your root manager, select AICore Bridge, and run **Action**.
-5. The Action copies the installed Google-signed package splits into the module's systemless priv-app layer and writes a diagnostic report.
-6. Reboot again.
+The Action writes `/sdcard/AICoreBridge/report-YYYYMMDD-HHMMSS.txt` containing:
 
-## KernelSU / ReSukiSU
-
-This module modifies `/system`, so KernelSU-family roots need a compatible metamodule such as `meta-overlayfs`. Magisk can use its normal systemless mount mechanism.
-
-## Diagnostics
-
-Run the module Action after boot. Reports are written to:
-
-`/sdcard/AICoreBridge/report-YYYYMMDD-HHMMSS.txt`
-
-The report captures:
-
-- model / product / SoC / fingerprint
-- bootloader / verified-boot hints
-- AICore / NPU feature declarations
-- AICore / PCS / ASI / GMS package paths and selected privileged permissions
-- Binder-service visibility
-- package SELinux labels and targeted `avc: denied` lines
-- Qualcomm QNN / HTP / NPU files
-- recent AICore / Gemini Nano / Private Compute logcat lines
+- untouched pre-install ColorOS baseline
+- post-bridge feature declarations
+- package system/user classification and code paths
+- AICore version/variant classification
+- GMS/ASI/AICore overlays
+- OPlus `my_bigball`, `my_stock`, `my_heytap`, `my_region` package/config locations when present
+- privileged permission state
+- Binder/service state
+- AICore/PCS data sizes
+- pKVM/virtualization hints
+- Qualcomm QNN/HTP/NPU/aiboost libraries
+- SELinux labels and targeted AVC denials
+- recent AICore, Gemini Nano, model download, `601 BINDING_FAILURE`, and `606 FEATURE_NOT_FOUND` logs
 
 ## Rollback
 
-Disable or remove the module and reboot. The system files are overlaid systemlessly; the ColorOS partitions themselves are not modified.
+Disable or remove the module and reboot. The ColorOS partitions are not physically modified.
