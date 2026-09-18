@@ -2,7 +2,7 @@
 
 ui_print " "
 ui_print "========================================"
-ui_print " AICore Bridge - OnePlus 13 CN 0.1-dev "
+ui_print " AICore Bridge - OnePlus 13 CN 0.2-dev "
 ui_print "========================================"
 
 MODEL=$(getprop ro.product.model)
@@ -23,7 +23,7 @@ fi
 
 case "$ARCH" in
   arm64) ;;
-  *) abort "! This prototype only supports arm64 devices." ;;
+  *) abort "! This module only supports arm64 devices." ;;
 esac
 
 case "$MODEL $DEVICE $PRODUCT" in
@@ -32,35 +32,62 @@ case "$MODEL $DEVICE $PRODUCT" in
     ;;
   *)
     ui_print "! Device is not identified as OnePlus 13."
-    ui_print "! Integration files will be installed, but hardware compatibility is not assumed."
+    ui_print "! Probe/install will continue conservatively."
+    ;;
+esac
+
+case "$SOC" in
+  *8750*|*SM8750*|*sm8750*)
+    ui_print "- SM8750 detected: qc8750 / OnePlus OOS Qualcomm AICore is preferred."
+    ;;
+  *)
+    ui_print "! SoC string does not explicitly report SM8750: $SOC"
     ;;
 esac
 
 if [ "$KSU" = "true" ] && [ ! -e /data/adb/metamodule ]; then
-  ui_print "! KernelSU/ReSukiSU system overlays require a metamodule."
-  ui_print "! Install meta-overlayfs (or an equivalent metamodule) before rebooting."
+  ui_print "! KernelSU/ReSukiSU requires a metamodule for product/system overlays."
+  ui_print "! Install meta-overlayfs (or compatible metamodule) before rebooting."
 fi
 
-mkdir -p "$MODPATH/system/priv-app/AICore"
-mkdir -p "$MODPATH/system/priv-app/PrivateComputeServices"
-mkdir -p "$MODPATH/system/priv-app/AndroidSystemIntelligence"
-mkdir -p "$MODPATH/state"
+PROOT="$MODPATH/system/product"
+AICORE_DIR="$PROOT/priv-app/AICore"
+PCS_DIR="$PROOT/priv-app/PrivateComputeServices"
+mkdir -p "$AICORE_DIR" "$PCS_DIR" "$MODPATH/state"
+
+pkg_is_system() {
+  PKG="$1"
+  if dumpsys package "$PKG" 2>/dev/null | grep -m1 -E 'pkgFlags=.*SYSTEM|flags=.*SYSTEM' >/dev/null 2>&1; then
+    return 0
+  fi
+  if pm path "$PKG" 2>/dev/null | grep -Eq '^package:/(system|product|system_ext|vendor|odm|my_[^/]+|apex)/'; then
+    return 0
+  fi
+  return 1
+}
+
+pkg_exists() {
+  pm path "$1" >/dev/null 2>&1
+}
 
 copy_installed_pkg() {
   PKG="$1"
   DEST="$2"
+  LABEL="$3"
+  mkdir -p "$DEST"
+  rm -f "$DEST"/*.apk
 
   pm path "$PKG" 2>/dev/null | while IFS= read -r LINE; do
     SRC=$(echo "$LINE" | sed 's/^package://')
     [ -f "$SRC" ] || continue
-    NAME=$(basename "$SRC")
-    cp -af "$SRC" "$MODPATH/system/priv-app/$DEST/$NAME"
+    cp -af "$SRC" "$DEST/$(basename "$SRC")"
   done
 
-  if ls "$MODPATH/system/priv-app/$DEST/"*.apk >/dev/null 2>&1; then
-    ui_print "- adopted installed package: $PKG"
+  if ls "$DEST"/*.apk >/dev/null 2>&1; then
+    ui_print "- promoted installed $LABEL to product priv-app."
     return 0
   fi
+  rmdir "$DEST" 2>/dev/null || true
   return 1
 }
 
@@ -69,36 +96,72 @@ import_bundle() {
   DEST="$2"
   LABEL="$3"
   [ -f "$SRC" ] || return 1
-  ui_print "- importing $LABEL bundle: $SRC"
-  rm -f "$MODPATH/system/priv-app/$DEST/"*.apk
-  unzip -oj "$SRC" '*.apk' -d "$MODPATH/system/priv-app/$DEST" >/dev/null 2>&1
-  if ls "$MODPATH/system/priv-app/$DEST/"*.apk >/dev/null 2>&1; then
+  mkdir -p "$DEST"
+  rm -f "$DEST"/*.apk
+  ui_print "- importing $LABEL bundle: $(basename "$SRC")"
+  unzip -oj "$SRC" '*.apk' -d "$DEST" >/dev/null 2>&1
+  if ls "$DEST"/*.apk >/dev/null 2>&1; then
     return 0
   fi
-  ui_print "! No APK files found inside $SRC"
+  ui_print "! No APK splits found in $SRC"
+  rmdir "$DEST" 2>/dev/null || true
+  return 1
+}
+
+find_bundle() {
+  BASE="$1"
+  for EXT in apks apkm zip; do
+    P="/sdcard/AICoreBridge/$BASE.$EXT"
+    [ -f "$P" ] && { echo "$P"; return 0; }
+  done
   return 1
 }
 
 IMPORT_DIR=/sdcard/AICoreBridge
 mkdir -p "$IMPORT_DIR" 2>/dev/null
 
-if ! import_bundle "$IMPORT_DIR/aicore.apkm" AICore AICore; then
-  copy_installed_pkg com.google.android.aicore AICore || true
-fi
-
-if ! import_bundle "$IMPORT_DIR/pcs.apkm" PrivateComputeServices "Private Compute Services"; then
-  copy_installed_pkg com.google.android.as.oss PrivateComputeServices || true
-fi
-
-if ! import_bundle "$IMPORT_DIR/asi.apkm" AndroidSystemIntelligence "Android System Intelligence"; then
-  copy_installed_pkg com.google.android.as AndroidSystemIntelligence || true
-fi
-
-for D in AICore PrivateComputeServices AndroidSystemIntelligence; do
-  if ! ls "$MODPATH/system/priv-app/$D/"*.apk >/dev/null 2>&1; then
-    rmdir "$MODPATH/system/priv-app/$D" 2>/dev/null || true
+# AICore: preserve a system/OOS copy if one already exists. Otherwise import the
+# official OOS/Google bundle supplied by the user, or promote an installed copy.
+if pkg_is_system com.google.android.aicore; then
+  ui_print "- AICore already exists as a system package; leaving it untouched."
+  rmdir "$AICORE_DIR" 2>/dev/null || true
+else
+  BUNDLE=$(find_bundle aicore 2>/dev/null)
+  if [ -n "$BUNDLE" ] && import_bundle "$BUNDLE" "$AICORE_DIR" AICore; then
+    :
+  elif pkg_exists com.google.android.aicore; then
+    copy_installed_pkg com.google.android.aicore "$AICORE_DIR" AICore || true
+  else
+    rmdir "$AICORE_DIR" 2>/dev/null || true
+    ui_print "! AICore not found."
+    ui_print "! Use the OnePlus OOS16-extracted production QC bundle or a Google production qc/qc8750 build."
   fi
-done
+fi
+
+# PCS: many OPlus global/GMS builds already ship it (sometimes outside /product,
+# e.g. an OEM Google partition). Never shadow an existing system PCS package.
+if pkg_is_system com.google.android.as.oss; then
+  ui_print "- Private Compute Services already exists as a system package; reusing it."
+  rmdir "$PCS_DIR" 2>/dev/null || true
+else
+  PCS_BUNDLE=$(find_bundle pcs 2>/dev/null)
+  if [ -n "$PCS_BUNDLE" ] && import_bundle "$PCS_BUNDLE" "$PCS_DIR" "Private Compute Services"; then
+    :
+  elif pkg_exists com.google.android.as.oss; then
+    copy_installed_pkg com.google.android.as.oss "$PCS_DIR" "Private Compute Services" || true
+  else
+    rmdir "$PCS_DIR" 2>/dev/null || true
+    ui_print "! PCS is not present. Model delivery may fail until an Android-16 PCS build is installed."
+  fi
+fi
+
+# Android System Intelligence is not required for Gboard->PCS/AICore access and
+# is intentionally not injected by the core bridge.
+if pkg_exists com.google.android.as; then
+  ui_print "- Android System Intelligence detected; leaving it untouched."
+else
+  ui_print "- Android System Intelligence not detected (optional for this Gboard-focused bridge)."
+fi
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm "$MODPATH/customize.sh" 0 0 0755
@@ -106,13 +169,6 @@ set_perm "$MODPATH/service.sh" 0 0 0755
 set_perm "$MODPATH/action.sh" 0 0 0755
 
 ui_print " "
-ui_print "- Integration layer installed."
-if [ ! -d "$MODPATH/system/priv-app/AICore" ]; then
-  ui_print "! AICore itself was not staged."
-  ui_print "! Reboot once, install the official Qualcomm AICore bundle, then run the module Action to adopt it."
-fi
-if [ ! -d "$MODPATH/system/priv-app/PrivateComputeServices" ]; then
-  ui_print "! Private Compute Services was not staged."
-  ui_print "! AICore model downloads may not work until PCS is present."
-fi
-ui_print "- Reboot is required after package adoption."
+ui_print "- Probe-first integration staged."
+ui_print "- No fingerprint/Pixel spoofing and no bootloader/integrity bypass is performed."
+ui_print "- Reboot, then run the module Action and send the generated report for analysis."
