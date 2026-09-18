@@ -11,7 +11,8 @@ class ConfigProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         if (method != "snapshot") return Bundle.EMPTY
-        val p = requireContext().getSharedPreferences("config", 0)
+        val c = context ?: return Bundle.EMPTY
+        val p = c.getSharedPreferences("config", 0)
         return Bundle().apply {
             putBoolean("writingTools", p.getBoolean("writingTools", true))
             putBoolean("regionBypass", p.getBoolean("regionBypass", true))
