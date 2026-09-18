@@ -1,0 +1,58 @@
+name: AICore Bridge Build
+
+on:
+  push:
+    branches: [aicore-bridge-build]
+  workflow_dispatch:
+
+concurrency:
+  group: aicore-bridge-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          bash -n aicore_bridge/customize.sh
+          bash -n aicore_bridge/service.sh
+          bash -n aicore_bridge/action.sh
+
+      - name: Validate module layout
+        run: |
+          test -f aicore_bridge/module.prop
+          test -f aicore_bridge/system/etc/permissions/aicore-bridge-features.xml
+          test -f aicore_bridge/system/etc/permissions/privapp-permissions-com.google.android.aicore.xml
+          test -f aicore_bridge/system/etc/permissions/privapp-permissions-com.google.android.as.oss.xml
+          test -f aicore_bridge/system/etc/sysconfig/aicore-bridge-associations.xml
+          grep -q '^id=aicore_bridge_oneplus13$' aicore_bridge/module.prop
+
+      - name: Validate XML
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import xml.etree.ElementTree as ET
+          for p in pathlib.Path('aicore_bridge/system/etc').rglob('*.xml'):
+              ET.parse(p)
+              print('OK', p)
+          PY
+
+      - name: Build module ZIP
+        run: |
+          cd aicore_bridge
+          chmod +x customize.sh service.sh action.sh
+          zip -9 -r ../AICoreBridge-OnePlus13-0.1-dev.zip . -x '*.DS_Store' '__MACOSX/*'
+
+      - name: Inspect ZIP
+        run: |
+          unzip -t AICoreBridge-OnePlus13-0.1-dev.zip
+          unzip -l AICoreBridge-OnePlus13-0.1-dev.zip
+          sha256sum AICoreBridge-OnePlus13-0.1-dev.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AICoreBridge-OnePlus13-0.1-dev
+          path: AICoreBridge-OnePlus13-0.1-dev.zip
