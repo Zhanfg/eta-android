@@ -1,0 +1,6 @@
+id=aicore_bridge_oneplus13
+name=AICore Bridge - OnePlus 13 CN
+version=0.1-dev
+versionCode=1
+author=Axymorrsen / ChatGPT
+description=Systemless AICore integration bridge for OnePlus 13 China ROM. Adds Qualcomm AICore features, privileged permission allowlists, PCC associations and package adoption helpers.
