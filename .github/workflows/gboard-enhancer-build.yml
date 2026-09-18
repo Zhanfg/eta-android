@@ -12,29 +12,54 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android SDK packages
+
+      - name: Install Android SDK 36
         shell: bash
         run: |
           SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-      - name: Extract source
+
+      - name: Install stable Flutter
+        shell: bash
         run: |
-          rm -rf GboardEnhancerLSP
-          unzip -q GboardEnhancerLSP-0.1-dev-source.zip
-      - name: Build debug APK
-        working-directory: GboardEnhancerLSP
-        run: gradle :app:assembleDebug --stacktrace
+          git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          "$HOME/flutter/bin/flutter" config --no-analytics
+          "$HOME/flutter/bin/flutter" config --android-sdk /usr/local/lib/android/sdk
+          "$HOME/flutter/bin/flutter" --version
+
+      - name: Generate Flutter project and apply 0.2 overlay
+        shell: bash
+        run: |
+          "$HOME/flutter/bin/flutter" create             --platforms=android             --org dev.gboard             --project-name gboard_enhancer_lsp             GboardEnhancerFlutter
+          cp gboard_flutter_overlay/pubspec.yaml GboardEnhancerFlutter/pubspec.yaml
+          rm -rf GboardEnhancerFlutter/lib
+          cp -r gboard_flutter_overlay/lib GboardEnhancerFlutter/lib
+          rm -rf GboardEnhancerFlutter/android/app/src/main/kotlin
+          cp -r gboard_flutter_overlay/android/app/src/main/kotlin GboardEnhancerFlutter/android/app/src/main/kotlin
+          mkdir -p GboardEnhancerFlutter/android/app/src/main/assets
+          cp gboard_flutter_overlay/android/app/src/main/assets/xposed_init              GboardEnhancerFlutter/android/app/src/main/assets/xposed_init
+          cp gboard_flutter_overlay/android/app/src/main/AndroidManifest.xml              GboardEnhancerFlutter/android/app/src/main/AndroidManifest.xml
+          cp gboard_flutter_overlay/android_app_build.gradle.kts              GboardEnhancerFlutter/android/app/build.gradle.kts
+          cp gboard_flutter_overlay/android_build.gradle.kts              GboardEnhancerFlutter/android/build.gradle.kts
+
+      - name: Flutter pub get
+        working-directory: GboardEnhancerFlutter
+        run: "$HOME/flutter/bin/flutter" pub get
+
+      - name: Build Flutter + Kotlin LSPosed APK
+        working-directory: GboardEnhancerFlutter
+        run: "$HOME/flutter/bin/flutter" build apk --debug -v
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: GboardEnhancerLSP-debug
-          path: GboardEnhancerLSP/app/build/outputs/apk/debug/app-debug.apk
+          name: GboardEnhancerFlutter-0.2-debug
+          path: GboardEnhancerFlutter/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: warn
