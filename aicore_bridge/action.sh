@@ -53,17 +53,28 @@ REPORT="$OUTDIR/report-$STAMP.txt"
   for PKG in com.google.android.aicore com.google.android.as.oss com.google.android.as com.google.android.gms com.android.vending; do
     echo "--- $PKG ---"
     pm path "$PKG" 2>&1 || true
-    dumpsys package "$PKG" 2>/dev/null | grep -E 'versionName=|versionCode=|codePath=|pkgFlags=|privateFlags=|granted=true|MANAGE_VIRTUAL_MACHINE|USE_ON_DEVICE_INTELLIGENCE|WRITE_SECURE_SETTINGS|READ_DEVICE_CONFIG|ACCESS_NPU' || true
+    dumpsys package "$PKG" 2>/dev/null | grep -E 'versionName=|versionCode=|codePath=|pkgFlags=|privateFlags=|granted=true|MANAGE_VIRTUAL_MACHINE|PROVIDE_ON_DEVICE_INTELLIGENCE|USE_ON_DEVICE_INTELLIGENCE|WRITE_SECURE_SETTINGS|READ_DEVICE_CONFIG|ACCESS_NPU' || true
   done
   echo
   echo "[SERVICES]"
   service list | grep -Ei 'aicore|on.device|intelligence|private.compute' || true
   echo
+  echo "[SELINUX]"
+  getenforce 2>/dev/null || true
+  for PKG in com.google.android.aicore com.google.android.as.oss com.google.android.as; do
+    pm path "$PKG" 2>/dev/null | while IFS= read -r LINE; do
+      P=$(echo "$LINE" | sed 's/^package://')
+      ls -lZ "$P" 2>/dev/null || true
+    done
+  done
+  dmesg 2>/dev/null | grep -Ei 'avc:.*(aicore|google.android.as|npu|qnn|htp|virt|vm)' | tail -n 200 || true
+  logcat -b all -d -t 3000 2>/dev/null | grep -Ei 'avc:.*(aicore|google.android.as|npu|qnn|htp|virt|vm)' | tail -n 200 || true
+  echo
   echo "[QUALCOMM / NPU FILES]"
   find /vendor /odm /system_ext -maxdepth 4 -type f 2>/dev/null | grep -Ei '/(lib|bin).*(qnn|htp|npu|aicore)' | head -n 200 || true
   echo
   echo "[RECENT LOGS]"
-  logcat -d -t 1200 2>/dev/null | grep -Ei 'aicore|gemini.?nano|ondeviceintelligence|private.?compute|com.google.android.as.oss' | tail -n 300 || true
+  logcat -d -t 1600 2>/dev/null | grep -Ei 'aicore|gemini.?nano|ondeviceintelligence|private.?compute|com.google.android.as.oss' | tail -n 400 || true
 } > "$REPORT"
 
 chmod 0644 "$REPORT" 2>/dev/null || true
