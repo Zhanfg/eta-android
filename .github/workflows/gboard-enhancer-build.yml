@@ -77,7 +77,7 @@ jobs:
         working-directory: GboardEnhancerFlutter
         shell: bash
         run: |
-          "$HOME/flutter/bin/flutter" build apk --debug -v
+          "$HOME/flutter/bin/flutter" build apk --debug --target-platform android-arm64 -v
 
       - uses: actions/upload-artifact@v4
         if: always()
