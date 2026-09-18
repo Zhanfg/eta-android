@@ -55,7 +55,14 @@ REPORT="$OUTDIR/report-$STAMP.txt"
   echo "AICore Bridge 0.2 diagnostic report"
   echo "date=$(date)"
   echo
-  echo "[BUILD / HARDWARE]"
+  echo "[PREINSTALL COLOROS BASELINE]"
+  if [ -f "$MODDIR/state/preinstall-coloros.txt" ]; then
+    cat "$MODDIR/state/preinstall-coloros.txt"
+  else
+    echo "baseline_missing=true"
+  fi
+  echo
+  echo "[POST-BRIDGE BUILD / HARDWARE]"
   getprop | grep -Ei 'ro.product|ro.build.fingerprint|ro.soc|ro.hardware|ro.boot.hardware|ro.vendor|oplus|oneplus' || true
   echo
   echo "[BOOT / VERIFIED BOOT]"
