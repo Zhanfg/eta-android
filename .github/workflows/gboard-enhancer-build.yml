@@ -37,25 +37,29 @@ jobs:
       - name: Generate Flutter project and apply 0.2 overlay
         shell: bash
         run: |
-          "$HOME/flutter/bin/flutter" create             --platforms=android             --org dev.gboard             --project-name gboard_enhancer_lsp             GboardEnhancerFlutter
+          "$HOME/flutter/bin/flutter" create --platforms=android --org dev.gboard --project-name gboard_enhancer_lsp GboardEnhancerFlutter
           cp gboard_flutter_overlay/pubspec.yaml GboardEnhancerFlutter/pubspec.yaml
           rm -rf GboardEnhancerFlutter/lib
           cp -r gboard_flutter_overlay/lib GboardEnhancerFlutter/lib
           rm -rf GboardEnhancerFlutter/android/app/src/main/kotlin
           cp -r gboard_flutter_overlay/android/app/src/main/kotlin GboardEnhancerFlutter/android/app/src/main/kotlin
           mkdir -p GboardEnhancerFlutter/android/app/src/main/assets
-          cp gboard_flutter_overlay/android/app/src/main/assets/xposed_init              GboardEnhancerFlutter/android/app/src/main/assets/xposed_init
-          cp gboard_flutter_overlay/android/app/src/main/AndroidManifest.xml              GboardEnhancerFlutter/android/app/src/main/AndroidManifest.xml
-          cp gboard_flutter_overlay/android_app_build.gradle.kts              GboardEnhancerFlutter/android/app/build.gradle.kts
-          cp gboard_flutter_overlay/android_build.gradle.kts              GboardEnhancerFlutter/android/build.gradle.kts
+          cp gboard_flutter_overlay/android/app/src/main/assets/xposed_init GboardEnhancerFlutter/android/app/src/main/assets/xposed_init
+          cp gboard_flutter_overlay/android/app/src/main/AndroidManifest.xml GboardEnhancerFlutter/android/app/src/main/AndroidManifest.xml
+          cp gboard_flutter_overlay/android_app_build.gradle.kts GboardEnhancerFlutter/android/app/build.gradle.kts
+          cp gboard_flutter_overlay/android_build.gradle.kts GboardEnhancerFlutter/android/build.gradle.kts
 
       - name: Flutter pub get
         working-directory: GboardEnhancerFlutter
-        run: "$HOME/flutter/bin/flutter" pub get
+        shell: bash
+        run: |
+          "$HOME/flutter/bin/flutter" pub get
 
       - name: Build Flutter + Kotlin LSPosed APK
         working-directory: GboardEnhancerFlutter
-        run: "$HOME/flutter/bin/flutter" build apk --debug -v
+        shell: bash
+        run: |
+          "$HOME/flutter/bin/flutter" build apk --debug -v
 
       - uses: actions/upload-artifact@v4
         if: always()
