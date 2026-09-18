@@ -55,6 +55,39 @@ AICORE_DIR="$PROOT/priv-app/AICore"
 PCS_DIR="$PROOT/priv-app/PrivateComputeServices"
 mkdir -p "$AICORE_DIR" "$PCS_DIR" "$MODPATH/state"
 
+# Capture the untouched ColorOS state before the next boot applies this module.
+BASELINE="$MODPATH/state/preinstall-coloros.txt"
+{
+  echo "AICore Bridge preinstall ColorOS snapshot"
+  echo "date=$(date)"
+  echo "model=$MODEL"
+  echo "device=$DEVICE"
+  echo "product=$PRODUCT"
+  echo "soc=$SOC"
+  echo "sdk=$SDK"
+  echo
+  echo "[FEATURES BEFORE MODULE]"
+  pm list features 2>/dev/null | grep -Ei "AICORE|NPU|ASI|ON_DEVICE" || true
+  echo
+  echo "[PACKAGES BEFORE MODULE]"
+  for PKG in com.google.android.aicore com.google.android.as.oss com.google.android.as com.google.android.inputmethod.latin com.google.android.gms; do
+    echo "--- $PKG ---"
+    pm path "$PKG" 2>&1 || true
+    dumpsys package "$PKG" 2>/dev/null | grep -E "versionName=|versionCode=|codePath=|pkgFlags=|privateFlags=" | head -n 30 || true
+  done
+  echo
+  echo "[OVERLAYS BEFORE MODULE]"
+  cmd overlay list 2>/dev/null | grep -Ei "GmsConfig|ASI|AICore|PrivateCompute|Google" | head -n 200 || true
+  echo
+  echo "[OEM GOOGLE PARTITIONS BEFORE MODULE]"
+  for D in /my_bigball /my_stock /my_heytap /my_region /product /system_ext; do
+    [ -e "$D" ] || continue
+    echo "--- $D ---"
+    find "$D" -maxdepth 4 \( -iname "*AICore*" -o -iname "*PrivateCompute*" -o -iname "*AndroidSystemIntelligence*" -o -iname "*GmsConfigOverlayASI*" \) 2>/dev/null | head -n 100
+  done
+} > "$BASELINE"
+ui_print "- saved pre-module ColorOS baseline."
+
 pkg_is_system() {
   PKG="$1"
   if dumpsys package "$PKG" 2>/dev/null | grep -m1 -E 'pkgFlags=.*SYSTEM|flags=.*SYSTEM' >/dev/null 2>&1; then
