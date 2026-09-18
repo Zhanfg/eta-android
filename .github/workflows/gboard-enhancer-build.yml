@@ -5,6 +5,10 @@ on:
     branches: [gboard-enhancer-build]
   workflow_dispatch:
 
+concurrency:
+  group: gboard-enhancer-flutter-build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
