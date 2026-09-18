@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config>
+    <allow-association target="com.google.android.as" allowed="com.google.android.as.oss" />
+    <allow-association target="com.google.android.as.oss" allowed="com.google.android.as" />
+    <allow-association target="com.google.android.aicore" allowed="com.google.android.as.oss" />
+    <allow-association target="com.google.android.as.oss" allowed="com.google.android.aicore" />
+</config>
